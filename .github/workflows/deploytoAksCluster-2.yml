@@ -1,0 +1,63 @@
+on: [push]
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    
+    - uses: actions/checkout@master
+    
+    - uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Create ACR
+      id: create-acr
+      run: |
+        az acr create -n madolkaAzPyTest -g madolkaAzPyTestb2e6-rg --location "West US 2" --sku Standard --admin-enabled
+        echo "::set-output name=acr_username::`az acr credential show -n madolkaAzPyTest --query username | xargs`"
+        echo "::set-output name=acr_password::`az acr credential show -n madolkaAzPyTest --query passwords[0].value | xargs`"
+        echo "::add-mask::`az acr credential show -n madolkaAzPyTest --query passwords[0].value | xargs`"
+
+    - uses: azure/docker-login@v1
+      with:
+        login-server: madolkaazpytest.azurecr.io
+        username: ${{ steps.create-acr.outputs.acr_username }}
+        password: ${{ steps.create-acr.outputs.acr_password }}
+
+    - name: Build and push image to ACR
+      id: build-image
+      run: |
+        docker build "$GITHUB_WORKSPACE/Dockerfile-dir" -f  "Dockerfile-dir/Dockerfile" -t madolkaazpytest.azurecr.io/madolkak8s:${{ github.sha }} --label dockerfile-path=Dockerfile-dir/Dockerfile
+        docker push madolkaazpytest.azurecr.io/madolkak8s:${{ github.sha }}
+    
+    - uses: azure/k8s-set-context@v1
+      id: login
+      with:
+         kubeconfig: ${{ secrets.aks_madolkak8s_kubeConfig }}
+    
+    - name: Create namespace
+      run: |
+        namespacePresent=`kubectl get namespace | grep madolka-k8saba9 | wc -l`
+        if [ $namespacePresent -eq 0 ]
+        then
+            echo `kubectl create namespace madolka-k8saba9`
+        fi
+
+    - uses: azure/k8s-create-secret@v1
+      with:
+        namespace: madolka-k8saba9
+        container-registry-url: madolkaazpytest.azurecr.io
+        container-registry-username: ${{ steps.create-acr.outputs.acr_username }}
+        container-registry-password: ${{ steps.create-acr.outputs.acr_password }}
+        secret-name: madolkak8sdockerauth
+       
+    - uses: azure/k8s-deploy@v1.2
+      with:
+        namespace: madolka-k8saba9
+        manifests: |
+          manifests/deployment-4.yml
+          manifests/service-4.yml
+        images: |
+          madolkaazpytest.azurecr.io/madolkak8s:${{ github.sha }}
+        imagepullsecrets: |
+          madolkak8sdockerauth   
