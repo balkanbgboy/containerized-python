@@ -1,0 +1,19 @@
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name: "madolkak8s-6828"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: "madolkak8s-6828"
+  template:
+    metadata:
+      labels:
+        app: "madolkak8s-6828"
+    spec:
+      containers:
+        - name: "madolkak8s-6828"
+          image: "madolkapy.azurecr.io/madolkak8s"
+          ports:
+          - containerPort: 80
